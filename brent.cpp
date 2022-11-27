@@ -34,41 +34,52 @@ struct stats_t
 	int nProbe = 0;
 	int nRelocTry = 0;
 	int nRelocProbe = 0;
-	int nReloc = 0;
-	int nFreeScan = 0;
+	int nRelocMove = 0;
+	int nDeleteTry = 0;
+	int nDeleteProbe = 0;
+	int nDeleteMove = 0;
+
 	void clear()
 	{
 		this->nCall = 0;
 		this->nProbe = 0;
 		this->nRelocProbe = 0;
 		this->nRelocTry = 0;
-		this->nReloc = 0;
-		this->nFreeScan = 0;
+		this->nRelocMove = 0;
+		this->nDeleteTry = 0;
+		this->nDeleteProbe = 0;
+		this->nDeleteMove = 0;
 	}
 	void addCall() { ++this->nCall; }
 	void addProbe() { ++this->nProbe; }
 	void addRelocTry() { ++this->nRelocTry; }
 	void addRelocProbe() { ++this->nRelocProbe; }
-	void addReloc() { ++this->nReloc; }
-	void addFreeScan() { ++this->nFreeScan; }
+	void addReloc() { ++this->nRelocMove; }
+	void addDeleteTry() { ++this->nDeleteTry; }
+	void addDeleteProbe() { ++this->nDeleteProbe; }
+	void addDeleteMove() { ++this->nDeleteMove; }
 	stats_t &add(const stats_t &b)
 	{
 		this->nCall += b.nCall;
 		this->nProbe += b.nProbe;
 		this->nRelocProbe += b.nRelocProbe;
 		this->nRelocTry += b.nRelocTry;
-		this->nReloc += b.nReloc;
-		this->nFreeScan += b.nFreeScan;
+		this->nRelocMove += b.nRelocMove;
+		this->nDeleteTry += b.nDeleteTry;
+		this->nDeleteProbe += b.nDeleteProbe;
+		this->nDeleteMove += b.nDeleteMove;
 		return *this;
 	}
 	void print()
 	{
 		std::cout << "nCall: " << this->nCall << " "
 			  << "nProbe: " << this->nProbe << " "
+			  << "nDeleteTry:" << this->nDeleteTry << " "
+			  << "nDeleteProbe: " << this->nDeleteProbe << " "
+			  << "nDeleteMove: " << this->nDeleteMove << " "
 			  << "nRelocTry: " << this->nRelocTry << " "
 			  << "nRelocProbe: " << this->nRelocProbe << " "
-			  << "nReloc: " << this->nReloc << " "
-			  << "nFreeScan: " << this->nFreeScan << " "
+			  << "nRelocMove: " << this->nRelocMove << " "
 			  << "\n";
 	}
 };
@@ -94,7 +105,7 @@ constexpr std::int32_t bitreverse(
 	std::int32_t v
 	)
 	{
-	return std::int32_t(bitreverse(std::uint32_t(v));
+	return std::int32_t(bitreverse(std::uint32_t(v)));
 	}
 
 constexpr int hash_Q(const key_t key)
@@ -141,13 +152,15 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 			bool needToExit = false;
 			key_t searchKey;
 
+			if (pStat != nullptr) pStat->addDeleteTry();
+
 			// scan forward to a free entry; if found,
 			// we'll move the entry to here, to shorten
 			// probes.
 			do
 			{
 				if (pStat != nullptr)
-					pStat->addFreeScan();
+					pStat->addDeleteProbe();
 				iScan += secondary_Q;
 				if (iScan >= len)
 					iScan -= len;
@@ -168,6 +181,8 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 			// key found. Move it and the associated value to
 			// save probes on the next search for the same key.
 			// (or simply nuke the one we found if we're deleting)
+			if (pStat != nullptr) pStat->addDeleteMove();
+
 			if (mode != hashMode_t::kDelete)
 				keytab[iEntry_s] = keytab[iScan];
 
@@ -262,7 +277,13 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 	assert(false && "Not reached");
 }
 
-key_t testKey(int j) { return j * 127; }
+/****************************************************************************\
+|
+|	Test code
+|
+\****************************************************************************/
+
+key_t testKey(int j) { return uint16_t(j * 31413); }
 
 int main()
 {
