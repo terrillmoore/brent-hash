@@ -73,6 +73,35 @@ struct stats_t
 	}
 };
 
+constexpr std::uint32_t bitreverse(
+	std::uint32_t v
+	)
+{
+	// swap odd and even bits
+	v = ((v >> 1) & UINT32_C(0x55555555)) | ((v & UINT32_C(0x55555555)) << 1);
+	// swap pairs
+	v = ((v >> 2) & UINT32_C(0x33333333)) | ((v & UINT32_C(0x33333333)) << 2);
+	// swap nibbles
+	v = ((v >> 4) & UINT32_C(0x0F0F0F0F)) | ((v & UINT32_C(0x0F0F0F0F)) << 4);
+	// swap bytes
+	v = ((v >> 8) & UINT32_C(0x00FF00FF)) | ((v & UINT32_C(0x00FF00FF)) << 8);
+	// swap halves
+	v = ((v >> 16) & UINT32_C(0x0000FFFF)) | ((v & UINT32_C(0x0000FFFF)) << 16);
+	return v;
+}
+
+constexpr std::int32_t bitreverse(
+	std::int32_t v
+	)
+	{
+	return std::int32_t(bitreverse(std::uint32_t(v));
+	}
+
+constexpr int hash_Q(const key_t key)
+{
+	return bitreverse(std::uint32_t(key)) % len2 + 1;
+}
+
 bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 	  stats_t *pStat)
 {
@@ -84,12 +113,12 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 	// in [1 .. len). Per [brent], this may be any
 	// independent pseudo-random function of key,
 	// but note that it must not be zero.
-	int secondary_Q = std::abs(key) % len2 + 1;
+	auto secondary_Q = hash_Q(key);
 
 	// primary hash code.
 	int primary_R = std::abs(key) % len;
-	auto iEntry = primary_R;
-	pEntry = &keytab[iEntry];
+	auto iEntry_s = primary_R;
+	pEntry = &keytab[iEntry_s];
 
 	if (pStat)
 		pStat->addCall();
@@ -107,7 +136,7 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 		else if (thisEntryKey == keyDeleted)
 		{
 			// 40 a deleted entry has been found
-			auto iScan = iEntry;
+			auto iScan = iEntry_s;
 			// compute address of next probe
 			bool needToExit = false;
 			key_t searchKey;
@@ -140,7 +169,7 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 			// save probes on the next search for the same key.
 			// (or simply nuke the one we found if we're deleting)
 			if (mode != hashMode_t::kDelete)
-				keytab[iEntry] = keytab[iScan];
+				keytab[iEntry_s] = keytab[iScan];
 
 			// where were were is now nothing.
 			keytab[iScan].markDeleted();
@@ -160,14 +189,14 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 		{
 			// advance
 			++iterationCount;
-			iEntry += secondary_Q;
-			if (iEntry >= len)
+			iEntry_s += secondary_Q;
+			if (iEntry_s >= len)
 			{
-				iEntry -= len;
+				iEntry_s -= len;
 			}
 			// invariant...
-			pEntry = &keytab[iEntry];
-			if (iEntry == primary_R)
+			pEntry = &keytab[iEntry_s];
+			if (iEntry_s == primary_R)
 				break;
 		}
 	}
@@ -194,34 +223,37 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 	{
 		//
 		// we probed more than twice, so ... we need
-		// to shuffle things around. The program in [brent] is
-		// impenetrable, so we use the pseudocde from [kube]
+		// to shuffle things around. iEntry_s.key is
+		// zero.
 		//
-		auto const v = iterationCount + 2;
-		int iRelocEntry;
+		auto const brent_s = iterationCount + 2;
 
 		if (pStat) pStat->addRelocTry();
 
-		for (int c = 0; c < v - 2; ++c)
+		// we need to iterate over Brent's h[c,d]:
+		// h[0,1]..h[0,s-1], h[1,1]..h[1,s-2], h[2,1]..h[2,s-3], ...,  h[s-2,1]..h[s-2,1]
+		for (int c = 0; c <= brent_s - 2; ++c)
 		{
-			iRelocEntry = primary_R;
-			for (int d = 0; d <= c; ++d)
+			auto const h_i = (primary_R + c * secondary_Q) % len;
+			auto const q_i = hash_Q(keytab[h_i].key);
+
+			for (int d = 1; d <= brent_s - c - 1; ++d)
 			{
 				if (pStat)
 					pStat->addRelocProbe();
-				auto here = (iRelocEntry + (c - d) * secondary_Q) % len;
-				if (!keytab[here].isOccupied())
+				auto const h_ij = (h_i + d * q_i) % len;
+				if (!keytab[h_ij].isOccupied())
 				{
 					if (pStat) pStat->addReloc();
-					// move key[iRelocEntry] here, and put new key at iRelocEntry.
-					keytab[here] = keytab[iRelocEntry];
-					keytab[iRelocEntry].key = key;
-					pEntry = &keytab[iRelocEntry];
+					// move key[h_i] to key[h_ij], and put new key at key[h_i].
+					keytab[h_ij] = keytab[h_i];
+					keytab[h_i].key = key;
+					pEntry = &keytab[h_i];
 					return false;
 				}
 			}
 		}
-		// no point in moving things around. Just return
+		// no point in moving things around. Just return.
 		assert(!pEntry->isOccupied());
 		pEntry->key = key;
 		return false;
