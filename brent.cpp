@@ -1,6 +1,33 @@
+/*
+
+Module:	brent.cpp
+
+Function:
+	Test program and implemetation of Brent's variation for hashing.
+
+Copyright and License:
+	This file copyright (C) 2022 by
+
+		MCCI Corporation
+		3520 Krums Corners Road
+		Ithaca, NY  14850
+
+	See accompanying LICENSE file for copyright and license information.
+
+Author:
+	Terry Moore, MCCI Corporation	November 2022
+
+*/
+
 #include <algorithm>
 #include <cassert>
 #include <iostream>
+
+/****************************************************************************\
+|
+|	Types
+|
+\****************************************************************************/
 
 enum class hashMode_t : unsigned
 {
@@ -9,13 +36,18 @@ enum class hashMode_t : unsigned
 	kDelete = 3,
 };
 
+/// \brief abstract type for keys in the table.
 typedef int key_t;
 
-constexpr int len = 127;
-constexpr int len2 = len - 2;
 constexpr key_t keyFree = 0;
 constexpr key_t keyDeleted = -1;
 
+/// \brief length of hash table -- this must be a prime!
+constexpr int len = 127;
+/// \brief secondary length, used for re-hashing. Must be len - 2.
+constexpr int len2 = len - 2;
+
+/// \brief the contents of the hash table
 struct hashEntry_t
 {
 	key_t key = 0;
@@ -23,11 +55,15 @@ struct hashEntry_t
 	void markDeleted() { this->key = keyDeleted; }
 	bool isFree() const { return this->key == keyFree; }
 	bool isDeleted() const { return this->key == keyDeleted; }
+
+	/// \brief does an entry contain real data (neither free nor deleted)?
 	bool isOccupied() const { return !(this->isFree() || this->isDeleted()); }
 };
 
+/// \brief the hash table
 hashEntry_t keytab[len];
 
+/// \brief statistics
 struct stats_t
 {
 	int nCall = 0;
@@ -84,6 +120,17 @@ struct stats_t
 	}
 };
 
+///
+/// \brief bit-reverse a 32-bit number
+///
+/// \details
+///	I found that bit reversing seemed to do a good job of handling
+///	situations where the input key sequence was a multiple of the
+///	primary and secondary key rehashing value. This is definitely
+///	a personal experiment.
+///
+///	This is a the well known loopless bit reversal scheme.
+///
 constexpr std::uint32_t bitreverse(
 	std::uint32_t v
 	)
@@ -101,6 +148,7 @@ constexpr std::uint32_t bitreverse(
 	return v;
 }
 
+/// \brief bit-reverse a signed integer.
 constexpr std::int32_t bitreverse(
 	std::int32_t v
 	)
@@ -108,11 +156,37 @@ constexpr std::int32_t bitreverse(
 	return std::int32_t(bitreverse(std::uint32_t(v)));
 	}
 
+///
+/// \brief calculate Brent's Q (secondary hash) for a given key
+///
+/// \return
+///	a number in [1..len-1].
+///
 constexpr int hash_Q(const key_t key)
 {
 	return bitreverse(std::uint32_t(key)) % len2 + 1;
 }
 
+///
+/// \brief look up, add, or delete a key using a table managed according
+///	to Brent.
+///
+/// \param [in] 	key	key of the entry to find or create
+/// \param [in] 	mode 	specifies whether to search (only),
+///				to search and add if not found, or
+///				to search and delete if found.
+/// \param [out] 	pEntry 	Set to point to the key if found or
+///				successfully added.
+/// \param [inout] 	pStat	Optionally points to a statistics object
+///				that will be updated reflecting the
+///				performance of the search.
+///
+/// \return
+///	If \c true, the key was previously in the table. Otherwise,
+///	it was not. For adds, if \c false, \c pEntry indicates whether
+///	the value was added (nullptr if table was full, not nullptr
+///	if a slot was located).
+///
 bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 	  stats_t *pStat)
 {
@@ -279,7 +353,7 @@ bool hash(const key_t key, const hashMode_t mode, hashEntry_t *&pEntry,
 
 /****************************************************************************\
 |
-|	Test code
+|	Test
 |
 \****************************************************************************/
 
